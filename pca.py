@@ -34,14 +34,16 @@ class PCA(nn.Module):
         return self.transform(X)
 
     def transform(self, X):
-        if hasattr(self, "components_"):
-            return torch.matmul(X - self.mean_, self.components_.t())
-        else:
-            raise ValueError("PCA must be fit before use.")
+        assert hasattr(self, "components_"), "PCA must be fit before use."
+        return torch.matmul(X - self.mean_, self.components_.t())
 
     def fit_transform(self, X):
         self.fit(X)
         return self.transform(X)
+
+    def inverse_transform(self, Y):
+        assert hasattr(self, "components_"), "PCA must be fit before use."
+        return torch.matmul(Y, self.components_) + self.mean_
 
 if __name__ == "__main__":
     import numpy as np
@@ -63,4 +65,6 @@ if __name__ == "__main__":
             _t = torch.tensor(_pca.transform(_iris))
             t = pca.transform(iris)
             assert torch.allclose(t, _t.to(device))
+        __iris = pca.inverse_transform(t)
+        assert torch.allclose(__iris, iris)
     print("passed!")
