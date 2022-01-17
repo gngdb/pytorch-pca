@@ -52,13 +52,8 @@ if __name__ == "__main__":
         _components = torch.tensor(_pca.components_)
         pca = PCA(n_components=n_components).fit(iris)
         components = pca.components_
-        def abs_allclose(a, b):
-            return torch.allclose(torch.abs(a), torch.abs(b))
-        assert abs_allclose(components, _components)
+        assert torch.allclose(components, _components)
         _t = torch.tensor(_pca.transform(iris.numpy()))
         t = pca.transform(iris)
-        #print(_t.size(), t.size())
-        def abs_allclose(a, b):
-            return torch.allclose(torch.abs(a), torch.abs(b))
-        assert abs_allclose(t, _t)
+        assert torch.allclose(t, _t)
     print("passed!")
