@@ -6,7 +6,8 @@ import torch.nn.functional as F
 def svd_flip(u, v):
     # columns of u, rows of v
     max_abs_cols = torch.argmax(torch.abs(u), 0)
-    signs = torch.sign(u[max_abs_cols, torch.arange(u.shape[1])])
+    i = torch.arange(u.shape[1]).to(u.device)
+    signs = torch.sign(u[max_abs_cols, i])
     u *= signs
     v *= signs.view(-1, 1)
     return u, v
@@ -47,13 +48,19 @@ if __name__ == "__main__":
     from sklearn.decomposition import PCA as sklearn_PCA
     from sklearn import datasets
     iris = torch.tensor(datasets.load_iris().data)
-    for n_components in (2, 4, None):
-        _pca = sklearn_PCA(n_components=n_components).fit(iris.numpy())
-        _components = torch.tensor(_pca.components_)
-        pca = PCA(n_components=n_components).fit(iris)
-        components = pca.components_
-        assert torch.allclose(components, _components)
-        _t = torch.tensor(_pca.transform(iris.numpy()))
-        t = pca.transform(iris)
-        assert torch.allclose(t, _t)
+    devices = ['cpu']
+    if torch.cuda.is_available():
+        devices.append('cuda')
+    for device in devices:
+        for n_components in (2, 4, None):
+            _iris = iris.numpy()
+            iris = iris.to(device)
+            _pca = sklearn_PCA(n_components=n_components).fit(_iris)
+            _components = torch.tensor(_pca.components_)
+            pca = PCA(n_components=n_components).to(device).fit(iris)
+            components = pca.components_
+            assert torch.allclose(components, _components)
+            _t = torch.tensor(_pca.transform(_iris))
+            t = pca.transform(iris)
+            assert torch.allclose(t, _t)
     print("passed!")
