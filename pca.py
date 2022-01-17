@@ -48,19 +48,19 @@ if __name__ == "__main__":
     from sklearn.decomposition import PCA as sklearn_PCA
     from sklearn import datasets
     iris = torch.tensor(datasets.load_iris().data)
+    _iris = iris.numpy()
     devices = ['cpu']
     if torch.cuda.is_available():
         devices.append('cuda')
     for device in devices:
+        iris = iris.to(device)
         for n_components in (2, 4, None):
-            _iris = iris.numpy()
-            iris = iris.to(device)
             _pca = sklearn_PCA(n_components=n_components).fit(_iris)
             _components = torch.tensor(_pca.components_)
             pca = PCA(n_components=n_components).to(device).fit(iris)
             components = pca.components_
-            assert torch.allclose(components, _components)
+            assert torch.allclose(components, _components.to(device))
             _t = torch.tensor(_pca.transform(_iris))
             t = pca.transform(iris)
-            assert torch.allclose(t, _t)
+            assert torch.allclose(t, _t.to(device))
     print("passed!")
