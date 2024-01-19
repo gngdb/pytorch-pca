@@ -1,10 +1,10 @@
 import torch.nn as nn
 import torch
 import torch.nn.functional as F
-from icecream import ic
+from PCA import PCA
 
 
-class IncrementalPCA(nn.Module):
+class IncrementalPCA(PCA):
     """
     An implementation of Incremental Principal Components Analysis (IPCA) that leverages PyTorch for GPU acceleration.
 
@@ -14,8 +14,7 @@ class IncrementalPCA(nn.Module):
     Attributes:
         n_components (int, optional): Number of components to keep.
         n_features (int, optional): Number of original components.
-        whiten (bool): When True, the `components_` vectors are divided to ensure uncorrelated outputs with
-                       unit component-wise variances. Defaults to False.
+        mean: The mean of the data, if not given it will be calculated and updated from the batched data.
     """
 
     def __init__(self, n_components: int, n_features: int, mean=None):
@@ -43,12 +42,9 @@ class IncrementalPCA(nn.Module):
 
         Args:
             X (torch.Tensor): The batch input data tensor with shape (n_samples, n_features).
-            last_mean (torch.Tensor): The previous mean tensor with shape (n_features,).
-            last_variance (torch.Tensor): The previous variance tensor with shape (n_features,).
-            last_sample_count (torch.Tensor): The count tensor of samples processed before the current batch.
 
         Returns:
-            Tuple[torch.Tensor, torch.Tensor, int]: Updated mean, variance tensors, and total sample count.
+            Tuple[torch.Tensor, torch.Tensor, int]: new data mean, updated mean, updated total sample count.
         """
         # if X.shape[0] == 0:
         #     return last_mean, last_variance, last_sample_count
@@ -162,6 +158,7 @@ if __name__ == '__main__':
             ipca.partial_fit(X_batch.cuda())
 
     ipca.eval()
+    print('testing saving and loading state dict')
     torch.save({'pca': ipca.state_dict()}, 'ipca.pkl')
     ipca = IncrementalPCA(n_components=n_components, n_features=X.shape[-1]).cuda()
     ipca.load_state_dict(torch.load('ipca.pkl')['pca'])
@@ -175,4 +172,6 @@ if __name__ == '__main__':
           X_reduced_sklearn[:5])
     print("Custom IncrementalPCA transformed data (first 5 samples):\n",
           X_reduced_custom_np[:5])
+    equal = np.allclose(X_reduced_sklearn, X_reduced_custom_np)
+    print('Sklearn and custom outputs are equal:', equal)
 
