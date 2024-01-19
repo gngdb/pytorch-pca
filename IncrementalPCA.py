@@ -123,7 +123,9 @@ if __name__ == '__main__':
 
     sklearn_ipca = sklearn_IPCA(n_components=n_components)
 
-    ipca = IncrementalPCA(n_components=n_components, n_features=X.shape[-1]).cuda().train()
+    device  = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    print(f'Using device: {device}')
+    ipca = IncrementalPCA(n_components=n_components, n_features=X.shape[-1]).to(device).train()
 
     for i in range(n_batches):
         start_index = i * batch_size
@@ -131,16 +133,16 @@ if __name__ == '__main__':
         X_batch = X[start_index:end_index]
         if i != n_batches - 1:
             sklearn_ipca.partial_fit(X_batch)
-            ipca.partial_fit(X_batch.cuda())
+            ipca.partial_fit(X_batch.to(device))
 
     ipca.eval()
     print('testing saving and loading state dict')
     torch.save({'pca': ipca.state_dict()}, 'ipca.pkl')
-    ipca = IncrementalPCA(n_components=n_components, n_features=X.shape[-1]).cuda()
+    ipca = IncrementalPCA(n_components=n_components, n_features=X.shape[-1]).to(device)
     ipca.load_state_dict(torch.load('ipca.pkl')['pca'])
 
     X_reduced_sklearn = sklearn_ipca.transform(X_batch)
-    X_reduced_custom = ipca.transform(X_batch.cuda())
+    X_reduced_custom = ipca.transform(X_batch.to(device))
 
     X_reduced_custom_np = X_reduced_custom.cpu().numpy()
 
