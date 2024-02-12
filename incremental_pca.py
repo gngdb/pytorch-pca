@@ -1,7 +1,7 @@
 import torch.nn as nn
 import torch
 import torch.nn.functional as F
-from PCA import PCA
+from pca import PCA
 
 
 def incremental_mean(X, last_mean, last_N):
@@ -30,15 +30,18 @@ def incremental_mean(X, last_mean, last_N):
 
 class IncrementalPCA(PCA):
     """
-    An implementation of Incremental Principal Components Analysis (IPCA) that leverages PyTorch for GPU acceleration.
+    An implementation of Incremental Principal Components Analysis (IPCA) that
+    leverages PyTorch for GPU acceleration.
 
-    This class provides methods to fit the model on data incrementally in batches, and to transform new data
-    based on the principal components learned during the fitting process.
+    This class provides methods to fit the model on data incrementally in
+    batches, and to transform new data based on the principal components learned
+    during the fitting process.
 
     Attributes:
         n_components (int, optional): Number of components to keep.
         n_features (int, optional): Number of original components.
-        mean: The mean of the data, if not given it will be calculated and updated from the batched data.
+        mean: The mean of the data, if not given it will be calculated and
+          updated from the batched data.
     """
 
     def __init__(self, n_components: int, n_features: int, mean=None):
@@ -49,10 +52,12 @@ class IncrementalPCA(PCA):
 
         self.fixed_mean = mean is not None
 
-        self.register_buffer('mean_', mean if self.fixed_mean else torch.zeros(n_features).float())
-        self.register_buffer('components_', torch.zeros((n_components, n_features)).float())
-        self.register_buffer('singular_values_', torch.zeros((n_components,)).float())
-
+        self.register_buffer('mean_', mean if self.fixed_mean
+                             else torch.zeros(n_features).float())
+        self.register_buffer('components_',
+            torch.zeros((n_components, n_features), dtype=torch.float32))
+        self.register_buffer('singular_values_',
+            torch.zeros((n_components,), dtype=torch.float32))
         self.register_buffer('N_', torch.tensor([0]))
 
     def _validate_data(self, X):
@@ -140,7 +145,8 @@ if __name__ == '__main__':
 
     device  = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f'Using device: {device}')
-    ipca = _TestableIncrementalPCA(n_components=n_components, n_features=X.shape[-1]).to(device)
+    ipca = _TestableIncrementalPCA(n_components=n_components,
+                                   n_features=X.shape[-1]).to(device)
     ipca = ipca.to(dtype)
     ipca.train()
 
@@ -156,14 +162,14 @@ if __name__ == '__main__':
             um, _, uc = sklearn.utils.extmath._incremental_mean_and_var(X_batch.numpy(), m, v, n)
             _nm, _um, _n = incremental_mean(X_batch, torch.tensor(m), torch.tensor(n))
             assert np.allclose(um, _um.numpy()) # unit test mean func
-            #print(f"Sklearn\n  {um=}\n  {uv=}\n  {uc=}")
             sklearn_ipca.partial_fit(X_batch)
             ipca.partial_fit(X_batch.to(device))
 
     ipca.eval()
     print('testing saving and loading state dict')
     torch.save({'pca': ipca.state_dict()}, 'ipca.pkl')
-    ipca = _TestableIncrementalPCA(n_components=n_components, n_features=X.shape[-1]).to(device)
+    ipca = _TestableIncrementalPCA(n_components=n_components,
+                                   n_features=X.shape[-1]).to(device)
     ipca.load_state_dict(torch.load('ipca.pkl')['pca'])
     ipca.to(dtype)
 
@@ -177,6 +183,7 @@ if __name__ == '__main__':
     print("Custom IncrementalPCA transformed data (first 5 samples):\n",
           X_reduced_custom_np[:5])
     equal = np.allclose(X_reduced_sklearn, X_reduced_custom_np)
-    assert equal
+    err = np.abs(X_reduced_sklearn - X_reduced_custom_np).max()
+    assert equal, f'Error: {err}'
     print('Sklearn and custom outputs are equal:', equal)
 
