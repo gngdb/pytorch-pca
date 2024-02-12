@@ -4,6 +4,30 @@ import torch.nn.functional as F
 from PCA import PCA
 
 
+def incremental_mean(X, last_mean, last_N):
+        """
+        Computes the incremental mean for the data `X`.
+
+        Args:
+            X (torch.Tensor): The batch input data tensor with shape (n_samples,
+              n_features).
+
+        Returns:
+            Tuple[torch.Tensor, torch.Tensor, int]: new data mean, updated mean,
+              updated total sample count.
+        """
+        new_N = X.shape[0]
+        new_mean = torch.mean(X, dim=0)
+
+        # https://github.com/scikit-learn/scikit-learn/blob/9e38cd00d032f777312e639477f1f52f3ea4b3b7/sklearn/utils/extmath.py#L1106
+        updated_N = last_N + new_N
+
+        # https://github.com/scikit-learn/scikit-learn/blob/9e38cd00d032f777312e639477f1f52f3ea4b3b7/sklearn/utils/extmath.py#L1108
+        updated_mean = (last_N * last_mean + new_N * new_mean) / updated_N
+
+        return new_mean, updated_mean, updated_N
+
+
 class IncrementalPCA(PCA):
     """
     An implementation of Incremental Principal Components Analysis (IPCA) that leverages PyTorch for GPU acceleration.
@@ -18,7 +42,7 @@ class IncrementalPCA(PCA):
     """
 
     def __init__(self, n_components: int, n_features: int, mean=None):
-        super(IncrementalPCA, self).__init__()
+        super(IncrementalPCA, self).__init__(n_components=n_components)
         assert n_components < n_features
         self.n_components = n_components
         self.n_features = n_features
@@ -36,34 +60,10 @@ class IncrementalPCA(PCA):
         assert X.shape[1] >= self.n_components
         assert X.device == self.N_.device
 
-    def update_mean_var(self, X):
-        """
-        Computes the incremental mean and variance for the data `X`.
-
-        Args:
-            X (torch.Tensor): The batch input data tensor with shape (n_samples, n_features).
-
-        Returns:
-            Tuple[torch.Tensor, torch.Tensor, int]: new data mean, updated mean, updated total sample count.
-        """
-        # if X.shape[0] == 0:
-        #     return last_mean, last_variance, last_sample_count
-        # last_mean, last_var, last_N = self.mean_, self.var_, self.N_
-        last_mean, last_N = self.mean_, self.N_
-
-        new_N = X.shape[0]
-        new_mean = torch.mean(X, dim=0)
-
-        updated_N = last_N + new_N
-
-        updated_mean = (last_N * last_mean + new_N * new_mean) / updated_N
-
-        # delta_mean = new_mean - last_mean
-        # new_sum_square = torch.sum((X - new_mean) ** 2, dim=0)
-        # updated_var = (last_var * last_N + new_sum_square + delta_mean ** 2 * last_N * new_N / updated_N) / updated_N
-
-        return new_mean, updated_mean, updated_N
-
+    def _svd(self, X):
+        U, S, Vt = torch.linalg.svd(X, full_matrices=False)
+        U, Vt = self._svd_flip(U, Vt, u_based_decision=False)
+        return U, S, Vt
 
     def partial_fit(self, X, check=True):
         if check:
@@ -73,30 +73,35 @@ class IncrementalPCA(PCA):
         if self.fixed_mean:
             X -= self.mean_
             n_total_samples = n_samples + self.N_
-
         else:
-            new_mean, updated_mean, n_total_samples = self.update_mean_var(X)
+            new_mean, updated_mean, n_total_samples = incremental_mean(X, self.mean_, self.N_)
             X -= new_mean
 
         if self.N_:
             if self.fixed_mean:
                 mean_cor = torch.zeros_like(self.mean_)
             else:
-                mean_cor = torch.sqrt((self.N_ / n_total_samples) * n_samples) * (self.mean_ - new_mean)
-                self.mean_ = updated_mean
+                mean_cor = torch.sqrt(
+                    (self.N_ / n_total_samples) * n_samples
+                ) * (self.mean_ - new_mean)
 
-            X = torch.vstack((self.singular_values_.unsqueeze(1) * self.components_, X, mean_cor))
+            X = torch.vstack(
+                (self.singular_values_.unsqueeze(1) * self.components_,
+                 X,
+                 mean_cor)
+            )
 
-        U, S, Vt = torch.linalg.svd(X, full_matrices=False)
-        U, Vt = self._svd_flip(U, Vt, u_based_decision=False)
+        U, S, Vt = self._svd(X)
 
         self.N_ = n_total_samples
         self.components_ = Vt[:self.n_components]
         self.singular_values_ = S[:self.n_components]
+        self.mean_ = updated_mean
 
         return self
 
     def transform(self, X):
+        print(X.dtype, self.mean_.dtype, self.components_.dtype)
         return torch.mm(X - self.mean_, self.components_.T)
 
     def forward(self, X, check=True):
@@ -108,38 +113,59 @@ class IncrementalPCA(PCA):
             raise RuntimeError('PCA has not been fitted')
 
 
+class _TestableIncrementalPCA(IncrementalPCA):
+    def _svd(self, X):
+        from scipy import linalg
+        U, S, Vt = linalg.svd(X.numpy(), full_matrices=False, check_finite=False)
+        U, Vt = sklearn.utils.extmath.svd_flip(U, Vt, u_based_decision=False)
+        return torch.tensor(U), torch.tensor(S), torch.tensor(Vt)
+
+
 if __name__ == '__main__':
     import numpy as np
     from sklearn.decomposition import IncrementalPCA as sklearn_IPCA
     from sklearn.datasets import make_classification
+    import sklearn.utils
 
     n_components = 5
     batch_size = 20
+    dtype = torch.float64
 
     X, _ = make_classification(n_samples=100, n_features=20, random_state=0)
-    X = torch.tensor(X, dtype=torch.float32)
+    X = torch.tensor(X, dtype=dtype)
 
     n_batches = X.shape[0] // batch_size
 
-    sklearn_ipca = sklearn_IPCA(n_components=n_components)
+    sklearn_ipca = sklearn_IPCA(n_components=n_components, batch_size=20)
 
     device  = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f'Using device: {device}')
-    ipca = IncrementalPCA(n_components=n_components, n_features=X.shape[-1]).to(device).train()
+    ipca = _TestableIncrementalPCA(n_components=n_components, n_features=X.shape[-1]).to(device)
+    ipca = ipca.to(dtype)
+    ipca.train()
 
     for i in range(n_batches):
         start_index = i * batch_size
         end_index = start_index + batch_size
         X_batch = X[start_index:end_index]
         if i != n_batches - 1:
+            if hasattr(sklearn_ipca, 'n_samples_seen_'):
+                m, v, n = sklearn_ipca.mean_, sklearn_ipca.var_, sklearn_ipca.n_samples_seen_
+            else:
+                m, v, n = [np.zeros((X.shape[-1],))] * 3
+            um, _, uc = sklearn.utils.extmath._incremental_mean_and_var(X_batch.numpy(), m, v, n)
+            _nm, _um, _n = incremental_mean(X_batch, torch.tensor(m), torch.tensor(n))
+            assert np.allclose(um, _um.numpy()) # unit test mean func
+            #print(f"Sklearn\n  {um=}\n  {uv=}\n  {uc=}")
             sklearn_ipca.partial_fit(X_batch)
             ipca.partial_fit(X_batch.to(device))
 
     ipca.eval()
     print('testing saving and loading state dict')
     torch.save({'pca': ipca.state_dict()}, 'ipca.pkl')
-    ipca = IncrementalPCA(n_components=n_components, n_features=X.shape[-1]).to(device)
+    ipca = _TestableIncrementalPCA(n_components=n_components, n_features=X.shape[-1]).to(device)
     ipca.load_state_dict(torch.load('ipca.pkl')['pca'])
+    ipca.to(dtype)
 
     X_reduced_sklearn = sklearn_ipca.transform(X_batch)
     X_reduced_custom = ipca.transform(X_batch.to(device))
@@ -151,5 +177,6 @@ if __name__ == '__main__':
     print("Custom IncrementalPCA transformed data (first 5 samples):\n",
           X_reduced_custom_np[:5])
     equal = np.allclose(X_reduced_sklearn, X_reduced_custom_np)
+    assert equal
     print('Sklearn and custom outputs are equal:', equal)
 
