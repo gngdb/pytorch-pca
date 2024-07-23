@@ -11,17 +11,21 @@ class PCA(nn.Module):
     @staticmethod
     def _svd_flip(u, v, u_based_decision=True):
         """
-        Adjusts the signs of the singular vectors from the SVD decomposition for deterministic output.
+        Adjusts the signs of the singular vectors from the SVD decomposition for
+        deterministic output.
 
-        This method ensures that the output remains consistent across different runs.
+        This method ensures that the output remains consistent across different
+        runs.
 
         Args:
             u (torch.Tensor): Left singular vectors tensor.
             v (torch.Tensor): Right singular vectors tensor.
-            u_based_decision (bool, optional): If True, uses the left singular vectors to determine the sign flipping. Defaults to True.
+            u_based_decision (bool, optional): If True, uses the left singular
+              vectors to determine the sign flipping. Defaults to True.
 
         Returns:
-            Tuple[torch.Tensor, torch.Tensor]: Adjusted left and right singular vectors tensors.
+            Tuple[torch.Tensor, torch.Tensor]: Adjusted left and right singular
+              vectors tensors.
         """
         if u_based_decision:
             max_abs_cols = torch.argmax(torch.abs(u), dim=0)
