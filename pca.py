@@ -3,19 +3,39 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
-def svd_flip(u, v):
-    # columns of u, rows of v
-    max_abs_cols = torch.argmax(torch.abs(u), 0)
-    i = torch.arange(u.shape[1]).to(u.device)
-    signs = torch.sign(u[max_abs_cols, i])
-    u *= signs
-    v *= signs.view(-1, 1)
-    return u, v
-
 class PCA(nn.Module):
     def __init__(self, n_components):
         super().__init__()
         self.n_components = n_components
+
+    @staticmethod
+    def _svd_flip(u, v, u_based_decision=True):
+        """
+        Adjusts the signs of the singular vectors from the SVD decomposition for
+        deterministic output.
+
+        This method ensures that the output remains consistent across different
+        runs.
+
+        Args:
+            u (torch.Tensor): Left singular vectors tensor.
+            v (torch.Tensor): Right singular vectors tensor.
+            u_based_decision (bool, optional): If True, uses the left singular
+              vectors to determine the sign flipping. Defaults to True.
+
+        Returns:
+            Tuple[torch.Tensor, torch.Tensor]: Adjusted left and right singular
+              vectors tensors.
+        """
+        if u_based_decision:
+            max_abs_cols = torch.argmax(torch.abs(u), dim=0)
+            signs = torch.sign(u[max_abs_cols, range(u.shape[1])])
+        else:
+            max_abs_rows = torch.argmax(torch.abs(v), dim=1)
+            signs = torch.sign(v[range(v.shape[0]), max_abs_rows])
+        u *= signs
+        v *= signs[:, None]
+        return u, v
 
     @torch.no_grad()
     def fit(self, X):
@@ -26,7 +46,7 @@ class PCA(nn.Module):
         Z = X - self.mean_ # center
         U, S, Vh = torch.linalg.svd(Z, full_matrices=False)
         Vt = Vh
-        U, Vt = svd_flip(U, Vt)
+        U, Vt = self._svd_flip(U, Vt)
         self.register_buffer("components_", Vt[:d])
         return self
 
