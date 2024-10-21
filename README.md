@@ -13,6 +13,12 @@ Now includes:
 Open `pca.py`, copy the code you'd like to use and then paste it where you'd
 like to use it.
 
+# Related Work
+
+* `valentingol`'s [`torch_pca`](https://github.com/valentingol/torch_pca) appears to be
+  a more full featured and faster (it chooses an appropriate PCA algorithm depending
+  on input dimensions) alternative PCA implementation also matching scikit-learn.
+
 [PCA]: https://scikit-learn.org/stable/modules/generated/sklearn.decomposition.PCA.html
 [IncrementalPCA]: https://scikit-learn.org/stable/modules/generated/sklearn.decomposition.IncrementalPCA.html
 [yry]: https://github.com/YRYoung
