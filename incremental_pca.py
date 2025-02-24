@@ -106,7 +106,6 @@ class IncrementalPCA(PCA):
         return self
 
     def transform(self, X):
-        print(X.dtype, self.mean_.dtype, self.components_.dtype)
         return torch.mm(X - self.mean_, self.components_.T)
 
     def forward(self, X, check=True):
